@@ -1,0 +1,6 @@
+*~
+*.bak
+*.log
+*.orig
+*.sw[a-p]
+*.tmp
