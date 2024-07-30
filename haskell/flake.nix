@@ -25,7 +25,7 @@
               import nixpkgs {
                 inherit system;
                 config.allowUnfree = true;
-                overlays = [];
+                overlays = [ ];
               }
             )
           );
@@ -38,14 +38,15 @@
       devShells = eachSystem (pkgs: {
         default = pkgs.mkShell {
           inputsFrom = [ self.packages.${pkgs.system}.default.env ];
-          packages = with pkgs.haskellPackages; [
-            cabal-fmt
-            cabal-install
-            fourmolu
-            ghcid
-            haskell-language-server
-            hlint
-          ];
+          packages =
+            (with pkgs; [ haskell-language-server ])
+            ++ (with pkgs.haskellPackages; [
+              cabal-fmt
+              cabal-install
+              fourmolu
+              ghcid
+              hlint
+            ]);
         };
       });
     };
