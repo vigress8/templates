@@ -1,3 +1,5 @@
+flake.lock
+
 *~
 *.bak
 *.log
