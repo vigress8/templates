@@ -1,6 +1,11 @@
 {
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    crane.url = "github:ipetkov/crane";
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     flake-compat = {
       url = "github:edolstra/flake-compat/master";
       flake = false;
@@ -8,7 +13,13 @@
   };
 
   outputs =
-    { self, nixpkgs, ... }:
+    {
+      self,
+      nixpkgs,
+      crane,
+      rust-overlay,
+      ...
+    }:
     let
       eachSystem =
         f:
@@ -21,51 +32,51 @@
           ]
           (
             system:
-            f (
-              import nixpkgs {
+            let
+              pkgs = import nixpkgs {
                 inherit system;
-                config.allowUnfree = true;
-                overlays = [];
-              }
-            )
+                config = { };
+                overlays = [ (import rust-overlay) ];
+              };
+            in
+            f {
+              inherit pkgs;
+              craneLib = (crane.mkLib pkgs).overrideToolchain (
+                p:
+                p.rust-bin.stable.latest.default.override {
+                  extensions = [ "rust-analyzer" "rust-src" ];
+                }
+              );
+            }
           );
     in
     {
       formatter = eachSystem (pkgs: pkgs.nixfmt-rfc-style);
-      packages = eachSystem (pkgs: {
-        default = pkgs.callPackage (
-          { lib, rustPlatform }:
-          let
-            manifest = lib.importTOML ./Cargo.toml;
-          in
-          rustPlatform.buildRustPackage {
-            pname = manifest.package.name;
-            inherit (manifest.package) version;
-            src = lib.cleanSource ./.;
-            cargoLock.lockFile = ./Cargo.lock;
-          }
-        ) { };
-      });
-      devShells = eachSystem (pkgs: {
-        default = pkgs.mkShell {
-          inputsFrom = [ self.packages.${pkgs.system}.default ];
-          packages = with pkgs; [
-            cargo
-            cargo-expand
-            cargo-watch
-            clippy
-            evcxr
-            mold
-            rust-analyzer
-            rustc
-            rustfmt
-            sccache
-          ];
-          CARGO_INCREMENTAL = "0";
-          RUSTC_WRAPPER = "sccache";
-          RUSTFLAGS = "-C link-arg=-fuse-ld=mold";
-          RUST_SRC_PATH = pkgs.rustPlatform.rustLibSrc;
-        };
-      });
+      packages = eachSystem (
+        { pkgs, craneLib }:
+        {
+          default = craneLib.buildPackage {
+            src = craneLib.cleanCargoSource ./.;
+            strictDeps = true;
+            buildInputs = [ pkgs.openssl ];
+          };
+        }
+      );
+      devShells = eachSystem (
+        { pkgs, craneLib }:
+        {
+          default = craneLib.devShell {
+            inputsFrom = [ self.packages.${pkgs.system}.default ];
+            packages = with pkgs; [
+              cargo-expand
+              cargo-watch
+              evcxr
+              mold
+            ];
+            RUSTFLAGS = "-C link-arg=-fuse-ld=mold";
+            LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [ pkgs.openssl ];
+          };
+        }
+      );
     };
 }
